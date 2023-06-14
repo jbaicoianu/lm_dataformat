@@ -13,6 +13,7 @@ from math import ceil
 import mmap
 import multiprocessing as mp
 from pathlib import Path
+from s3file import open
 
 VALID_EXTENSIONS = ['openwebtext.tar.xz', '_data.xz', '.dat.zst', '.jsonl', '.jsonl.zst', '.jsonl.zst.tar', '.json.zst', '.txt', '.zip', '.tar.gz', '.json.gz', '.gz']
 
@@ -22,7 +23,9 @@ def has_valid_extension(file):
 def _listdir_or_file(x):
     if isinstance(x, list):
         return reduce(lambda x, y: x + y, map(listdir_or_file, sorted(x)))
-    if os.path.isfile(x):
+    if x[0:5] == 's3://':
+        return [x]
+    elif os.path.isfile(x):
         return [x]
     elif os.path.isdir(x):
         return [str(Path(x) / fn) for fn in sorted(os.listdir(x))]
@@ -209,7 +212,8 @@ class Reader:
         yield from (x.decode('utf-8') for x in tarfile_reader(gz, streaming=False))
     
     def read_gz(self, file): 
-        with gzip.open(file, 'rb') as f:
+        with open(file, 'rb') as rf:
+            f = gzip.GzipFile(fileobj=rf, mode='rb')
             for line in f:
                 yield line.decode('utf-8')
                 
@@ -238,7 +242,8 @@ class Reader:
                 yield reader.read(ln).decode('UTF-8')
 
     def read_jsonl(self, file, get_meta=False, autojoin_paragraphs=True, para_joiner='\n\n', key='text'):
-        with jsonlines.open(file) as rdr:
+        with open(file, 'rb') as fh:
+            rdr = jsonlines.Reader(fh)
             yield from handle_jsonl(rdr, get_meta, autojoin_paragraphs, para_joiner, key)
             
     def read_jsonl_zst(self, file, get_meta=False, autojoin_paragraphs=True, para_joiner='\n\n', key='text'):
